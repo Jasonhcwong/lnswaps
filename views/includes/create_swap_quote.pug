@@ -1,0 +1,135 @@
+form.collapse.create-swap-quote.mb-4.show
+  .swap-settings
+    .form-group
+      label
+        h4.text-primary Swap:
+      .input-group.input-group-lg.mb-3
+        .input-group-prepend
+          label.input-group-text
+            span.coin-icon.icon-ltctestnet(hidden)
+              svg.svg-litecoin(
+                aria-hidden="true",
+                role="img",
+                viewBox="0.847 0.876 329.254 329.256",
+                xmlns="http://www.w3.org/2000/svg",
+              )
+                path(
+                  d="M330.102 165.503c0 90.922-73.705 164.629-164.626 164.629C74.554 330.132.848 256.425.848 165.503.848 74.582 74.554.876 165.476.876c90.92 0 164.626 73.706 164.626 164.627",
+                  fill="currentColor",
+                )
+                path(
+                  d="M295.15 165.505c0 71.613-58.057 129.675-129.674 129.675-71.616 0-129.677-58.062-129.677-129.675 0-71.619 58.061-129.677 129.677-129.677 71.618 0 129.674 58.057 129.674 129.677",
+                  fill="currentColor",
+                )
+                path(
+                  d="M155.854 209.482l10.693-40.264 25.316-9.249 6.297-23.663-.215-.587-24.92 9.104 17.955-67.608h-50.921l-23.481 88.23-19.605 7.162-6.478 24.395 19.59-7.156-13.839 51.998h135.521l8.688-32.362h-84.601",
+                  fill="#e4e7eb",
+                )
+            i.coin-icon.fab.fa-bitcoin.fa-fw.icon-testnet
+            i.coin-icon.fab.fa-ethereum.fa-fw.icon-eth_rinkeby(hidden)
+        select.custom-select.form-control.select-currency(disabled)
+          option(selected, value="testnet")
+            | Testnet Bitcoin
+          option(value="ltctestnet")
+            | Testnet Litecoin
+          option(value="eth_rinkeby")
+            | Ethereum Rinkeby
+        .input-group-append
+          label.input-group-text
+            span $
+            span.current-fiat-price.mr-2
+            span #{' '}
+            span tUSD
+    .form-group
+      label
+        h4.text-primary To pay a Lightning invoice:
+      .input-group.input-group-lg.mb-3
+        .input-group-prepend
+          span.input-group-text
+            i.fa-asterisk.fa-fw.fa-spin.fas.looking-up-invoice(hidden)
+            i.fa-bolt.fa-fw.fas.not-looking-up-invoice
+            i.fa-frown.fa-fw.fas.has-invoice-problem.text-danger(hidden)
+        input.form-control.pay-to-lightning-invoice(
+          autofocus,
+          placeholder="Enter Lightning invoice to pay...",
+          readonly,
+          required,
+          spellcheck="false",
+          type="text"
+        )
+        .invalid-feedback.invoice-issue
+    .collapse.form-group.invoice-details
+      .bg-light.card
+        .card-body.pb-3
+          h4.card-title
+            span Send
+            span #{' '}
+            span.send-amount
+            span #{' '}
+            span.send-currency-code
+            span #{' '}
+            span (
+            span.fiat-send-amount
+            span #{' '}
+            span.fiat-currency-code
+            span )
+          h6.card-subtitle.mb-2.text-muted
+            span to
+            span #{' '}
+            span.payment-public-key
+            a(href="#").destination-url.text-dark
+          p.card-text.description
+            i.fa-quote-left.fas.mr-2.text-muted
+            span.payment-description.mr-2
+            i.fa-quote-right.fas.text-muted
+    .mb-4
+      .custom-control.custom-checkbox
+        input.custom-control-input#use-paper-wallet(checked, type="checkbox")
+        label.custom-control-label.paper-wallet-label(for="use-paper-wallet")
+          | Generate refund paper wallet
+    .form-group.refund-address-entry(hidden)
+      label
+        span Refund Address:
+      .input-group.input-group-lg.mb-3
+        .input-group-prepend
+          span.input-group-text
+            i.fa-fw.fas.fa-undo-alt
+        input.form-control.refund-address(
+          autocomplete="off",
+          placeholder="Enter a refund address...",
+          spellcheck="false",
+          type="text"
+        )
+      small.form-text.text-muted
+        span Enter a
+        span #{' '}
+        span.required-address-type
+          abbr.initialism(title="Pay to Public Key Hash (1xx)") p2pkh
+          span #{' '}
+          span or
+          span #{' '}
+          abbr.initialism(
+            title="Pay to Witness Public Key Hash (bc)"
+          ) p2pkh
+        span #{' '}
+        span.address-currency-label tBTC
+        span #{' '}
+        span address
+        span #{' '}
+        strong with a private key you control
+        span #{' '}
+        span to use for a refund if things go wrong.
+    button.btn.btn-lg.btn-primary.disabled.make(type="submit")
+      span Swap Rate
+      span #{' '}
+      span.fee-percentage
+      span %
+      span.final-fee(hidden)
+        span . Total Fee:
+        span #{' '}
+        span $
+        span.fiat-fee-total
+        span #{' '}
+        span tUSD
+      span #{' '}
+      i.fa-chevron-circle-right.fas

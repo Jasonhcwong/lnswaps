@@ -1,0 +1,67 @@
+{
+  "name": "lnswaps",
+  "version": "0.0.1",
+  "main": "index.js",
+  "scripts": {
+    "pretest": "eslint --ignore-path .gitignore .",
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Jasonhcwong/lnswaps.git"
+  },
+  "author": "Jason Wong",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/Jasonhcwong/lnswaps/issues"
+  },
+  "homepage": "https://github.com/Jasonhcwong/lnswaps#readme",
+  "description": "An alternative implementation of submarineswaps",
+  "dependencies": {
+    "apollo-datasource-rest": "0.1.0-rc.12",
+    "apollo-server": "^2.0.0-rc.12",
+    "async": "^2.6.1",
+    "bip39": "^2.5.0",
+    "bip65": "^1.0.3",
+    "bitcoin-ops": "^1.4.1",
+    "bitcoinjs-lib": "^3.3.2",
+    "body-parser": "^1.18.3",
+    "browserify-middleware": "^8.1.1",
+    "compression": "^1.7.3",
+    "cors": "^2.8.4",
+    "express": "^4.16.3",
+    "graphql": "^0.13.2",
+    "helmet": "^3.13.0",
+    "ln-service": "^8.1.0",
+    "log4js": "^3.0.5",
+    "morgan": "^1.9.0",
+    "node-bitcoin-rpc": "^1.1.3",
+    "node-fetch": "^2.1.2",
+    "pug": "^2.0.3",
+    "pushdata-bitcoin": "^1.0.1",
+    "redis": "^2.8.0",
+    "serve-favicon": "^2.5.0",
+    "varuint-bitcoin": "^1.1.0",
+    "walnut": "0.0.4",
+    "web3": "^1.0.0-beta.35",
+    "websocket-stream": "^5.1.2",
+    "zmq": "^2.15.3"
+  },
+  "devDependencies": {
+    "eslint": "^4.19.1",
+    "eslint-config-airbnb-base": "^13.0.0",
+    "eslint-config-google": "^0.9.1",
+    "eslint-config-standard": "^11.0.0",
+    "eslint-plugin-import": "^2.13.0",
+    "eslint-plugin-node": "^7.0.1",
+    "eslint-plugin-promise": "^3.8.0",
+    "eslint-plugin-standard": "^3.1.0"
+  },
+  "keywords": [
+    "AtomicSwap",
+    "bitcoin",
+    "litecoin",
+    "ethereum"
+  ]
+}

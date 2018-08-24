@@ -1,0 +1,40 @@
+.collapse.hide.swap-success.template
+  .border-success.card.mb-3
+    .card-header
+      span Swap
+    .card-body
+      h5.card-title.text-success Swap Complete!
+      .card-text.collapse.invoice-details.show
+        dl
+          dt On-Chain
+          dd
+            span.chain-amount
+            span #{' '}
+            span.send-network-code
+          dt Transaction Id
+          dd
+            a(target="blank").text-muted.transaction-id
+          dt Off-Chain
+          dd
+            span.send-amount
+            span #{' '}
+            span.send-currency-code
+          dt Swap Fee
+          dd
+            span.swap-fee
+            span #{' '}
+            span.send-network-code
+          .description
+            dt Invoice
+            dd
+              i.fa-quote-left.fas.mr-1
+              span #{' '}
+              span.payment-description.mr-1
+              span #{' '}
+              i.fa-quote-right.fas
+          dt Payment Proof
+          dd
+            code.payment-secret.text-muted
+    .card-footer
+      .swap-date.text-muted
+

@@ -1,0 +1,118 @@
+[
+	{
+		"constant": false,
+		"inputs": [
+			{
+				"name": "lninvoice",
+				"type": "string"
+			},
+			{
+				"name": "paymentHash",
+				"type": "bytes32"
+			}
+		],
+		"name": "fund",
+		"outputs": [],
+		"payable": true,
+		"stateMutability": "payable",
+		"type": "function"
+	},
+	{
+		"constant": false,
+		"inputs": [
+			{
+				"name": "lninvoice",
+				"type": "string"
+			},
+			{
+				"name": "preimage",
+				"type": "bytes32"
+			}
+		],
+		"name": "claim",
+		"outputs": [],
+		"payable": false,
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"constant": true,
+		"inputs": [],
+		"name": "owner",
+		"outputs": [
+			{
+				"name": "",
+				"type": "address"
+			}
+		],
+		"payable": false,
+		"stateMutability": "view",
+		"type": "function"
+	},
+	{
+		"constant": false,
+		"inputs": [
+			{
+				"name": "lninvoice",
+				"type": "string"
+			}
+		],
+		"name": "refund",
+		"outputs": [],
+		"payable": false,
+		"stateMutability": "nonpayable",
+		"type": "function"
+	},
+	{
+		"inputs": [],
+		"payable": false,
+		"stateMutability": "nonpayable",
+		"type": "constructor"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": false,
+				"name": "lninvoice",
+				"type": "string"
+			},
+			{
+				"indexed": false,
+				"name": "onchainAmount",
+				"type": "uint256"
+			},
+			{
+				"indexed": false,
+				"name": "paymentHash",
+				"type": "bytes32"
+			}
+		],
+		"name": "orderFunded",
+		"type": "event"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": false,
+				"name": "lninvoice",
+				"type": "string"
+			}
+		],
+		"name": "orderClaimed",
+		"type": "event"
+	},
+	{
+		"anonymous": false,
+		"inputs": [
+			{
+				"indexed": false,
+				"name": "lninvoice",
+				"type": "string"
+			}
+		],
+		"name": "orderRefunded",
+		"type": "event"
+	}
+]
