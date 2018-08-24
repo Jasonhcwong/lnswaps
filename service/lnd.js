@@ -1,11 +1,11 @@
 const { lightningDaemon } = require('ln-service');
 
-const { SSS_LND_GRPC_HOST } = process.env;
+const { LNSWAP_LND_GRPC_HOST } = process.env;
 
 let lnd;
 try {
   lnd = lightningDaemon({
-    host: SSS_LND_GRPC_HOST,
+    host: LNSWAP_LND_GRPC_HOST,
   });
 } catch (e) {
   console.log('Error initialize connection with lnd:', e);

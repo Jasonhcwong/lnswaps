@@ -820,8 +820,13 @@ App.presentCompletedSwap = (args) => {
   swap.addClass('presented').removeClass('template');
 
   switch (args.network) {
-    case 'ethrinkeby':
-      href = `https://www.blocktrail.com/tBCC/tx/${args.transaction_id}`;
+    case 'ethereum':
+      href = `https://etherscan.io/tx/${args.transaction_id}`;
+      onChainCurrency = 'ETH';
+      break;
+
+    case 'eth_rinkeby':
+      href = `https://rinkeby.etherscan.io/tx/${args.transaction_id}`;
       onChainCurrency = 'tETH';
       break;
 
@@ -1063,13 +1068,6 @@ App.submitCreateSwapQuote = function (event) {
     quote.find('.save-redeem-script').click((e) => {
       const anchor = document.createElement('a');
       const encoding = 'data:text/plain;charset=utf-8';
-
-      console.log('[JASON]isPaperWallet:', isPaperWallet);
-      console.log('[JASON]details.redeem_script:', details.redeem_script);
-      console.log('[JASON]address:', address);
-      console.log('[JASON]timeout_block_height:', details.timeout_block_height);
-      console.log('[JASON]swapAddress,:', swapAddress);
-      console.log('[JASON]swapAmount,:', swapAmount);
 
       if (network === 'eth_rinkeby') {
         const swapContract = web3.eth.contract(swapContractJson);

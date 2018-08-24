@@ -4,7 +4,7 @@ const bitcoinjslib = require('./../tokenslib');
 
 const minIndex = 0;
 const maxIndex = 4294967295;
-const { SSS_CLAIM_BIP39_SEED } = process.env;
+const { LNSWAP_CLAIM_BIP39_SEED } = process.env;
 
 /** Server swap key pair
 
@@ -26,7 +26,7 @@ const { SSS_CLAIM_BIP39_SEED } = process.env;
   }
 */
 module.exports = ({ index, network }) => {
-  if (!validateMnemonic(SSS_CLAIM_BIP39_SEED)) {
+  if (!validateMnemonic(LNSWAP_CLAIM_BIP39_SEED)) {
     console.log([500, 'ExpectedValidMnemonic', generateMnemonic()]);
     process.exit();
   }
@@ -39,7 +39,7 @@ module.exports = ({ index, network }) => {
     throw new Error('ExpectedValidNetwork');
   }
 
-  const seed = mnemonicToSeed(SSS_CLAIM_BIP39_SEED);
+  const seed = mnemonicToSeed(LNSWAP_CLAIM_BIP39_SEED);
 
   const root = bitcoinjslib.HDNode.fromSeedBuffer(seed, bitcoinjslib.networks[network]);
 
