@@ -14,21 +14,9 @@ const logger = log4js.getLogger();
 logger.level = 'all';
 
 const RINKEBY_WSS = 'wss://rinkeby.infura.io/ws';
-let provider = new Web3.providers.WebsocketProvider(RINKEBY_WSS);
-const web3 = new Web3(provider);
+// const GETH_WSS = 'ws://127.0.0.1:8546';
 
-provider.on('connect', () => logger.info('WSS connected'));
-provider.on('error', e => logger.error('WSS Error:', e));
-provider.on('end', (e) => {
-  logger.error('WSS closed:', e);
-  logger.error('Attempting to reconnect...');
-
-  provider = new Web3.providers.WebsocketProvider(RINKEBY_WSS);
-
-  // provider.on('connect', () => logger.info('WSS Reconnected'));
-
-  web3.setProvider(provider);
-});
+const web3 = new Web3();
 
 const { LNSWAP_CHAIN, LNSWAP_CONTRACT_ADDRESS, LNSWAP_CLAIM_PRIVIATE_KEY } = process.env;
 if (!LNSWAP_CHAIN || !LNSWAP_CONTRACT_ADDRESS || !LNSWAP_CLAIM_PRIVIATE_KEY) {
@@ -49,10 +37,6 @@ switch (LNSWAP_CHAIN) {
 const swapContractABI = JSON.parse(fs.readFileSync('swap_contract_abi.json', 'utf8'));
 const swapContract = new web3.eth.Contract(swapContractABI, LNSWAP_CONTRACT_ADDRESS);
 
-redisSub.on('psubscribe', (pattern, count) => {
-  logger.info('[psubcribe]pattern: ', pattern, ', count: ', count);
-});
-
 function claimTransaction({ invoice, lnPreimage }) {
   const input = swapContract.methods.claim(invoice, '0x'.concat(lnPreimage)).encodeABI();
   const rawTxn = {
@@ -62,13 +46,18 @@ function claimTransaction({ invoice, lnPreimage }) {
   };
   web3.eth.accounts.signTransaction(rawTxn, LNSWAP_CLAIM_PRIVIATE_KEY)
     .then(({ rawTransaction }) => {
-      logger.debug('raw claim transaction:', rawTransaction);
+      // logger.debug('raw claim transaction:', rawTransaction);
       web3.eth.sendSignedTransaction(rawTransaction)
         .on('transactionHash', (hash) => {
+          redisClient.hmset(`SwapOrder:${invoice}`, 'claimingTxn',
+            hash, 'state', 'WaitingForClaimingConfirmation');
           logger.info('claimTransaction: hash:', hash);
         })
         .on('confirmation', (confNo) => {
-          logger.debug('claimTransaction: confNo:', confNo);
+          if (confNo === 1) {
+            redisClient.hset(`SwapOrder:${invoice}`, 'state', 'OrderClaimed');
+            logger.debug('claimTransaction: confNo:', confNo);
+          }
         })
         .on('error', (err) => {
           logger.error('claimTransaction:', err);
@@ -78,6 +67,10 @@ function claimTransaction({ invoice, lnPreimage }) {
       logger.error('signTransaction:', err);
     });
 }
+
+redisSub.on('psubscribe', (pattern, count) => {
+  logger.info('[psubcribe]pattern: ', pattern, ', count: ', count);
+});
 
 redisSub.on('pmessage', (pattern, channel, message) => {
   logger.debug('[pmessage]channel ', channel, ': ', message);
@@ -112,33 +105,6 @@ redisSub.on('pmessage', (pattern, channel, message) => {
 
 redisSub.psubscribe('__keyspace@0__:SwapOrder:*');
 
-// This function is called when a new block is received
-// It scans through interestedTxns to see if a txn is confirmed by reading TransactionReceipt
-function scanInterestedTxns() {
-  interestedTxns.forEach((invoice, hash, map) => {
-    web3.eth.getTransactionReceipt(hash)
-      .then((receipt) => {
-        // if a receipt returned(txn confirmed) and status is true(txn execution successful)
-        if (receipt && receipt.status) {
-          redisClient.hmset(
-            `SwapOrder:${invoice}`,
-            'fundingBlockHash', receipt.blockHash,
-            'state', 'WaitingForPayment',
-            (err) => {
-              if (err) {
-                logger.error('updating order:', invoice);
-              } else {
-                map.delete(hash);
-                logger.info(`confirmed txn ${hash} at block ${receipt.blockHash}`);
-              }
-            },
-          );
-        }
-      })
-      .catch(err => logger.error('getTransactionReceipt:', err));
-  });
-}
-
 function updateGasPrice() {
   web3.eth.getGasPrice()
     .then((price) => {
@@ -146,25 +112,10 @@ function updateGasPrice() {
       // {  feerate: '0.00001', blocks:  '1' }
       const fee = JSON.stringify({ feerate: price, blocks: '1' });
       redisClient.set(`Blockchain:${LNSWAP_CHAIN}:FeeEstimation`, fee, 'EX', FEE_ESTIMATION_EXPIRATION);
-      logger.info('Gas price(wei):', price);
-    });
+      logger.debug('Gas price(wei):', price);
+    })
+    .catch(e => logger.error('updateGasPrice():', e));
 }
-
-web3.eth.subscribe('newBlockHeaders')
-  .on('data', (hdr) => {
-    // Blockchain Height format used by swap service: '1254834'
-    redisClient.set(`Blockchain:${LNSWAP_CHAIN}:Height`, hdr.number, 'EX', BLOCK_HEIGHT_EXPIRATION);
-
-    logger.info('New Block number:', hdr.number, ', hash:', hdr.hash);
-
-    scanInterestedTxns();
-
-    updateGasPrice();
-  })
-  .on('error', (err) => {
-    logger.fatal('newBlockHeaders subscription:', err);
-    process.exit();
-  });
 
 function updatePendingTxn({ txn }) {
   const fundedParamsJSON = [
@@ -215,9 +166,129 @@ function processPendingTxn(hash, retryCount) {
     });
 }
 
-web3.eth.subscribe('pendingTransactions')
-  .on('data', hash => processPendingTxn(hash, 0))
-  .on('error', (err) => {
-    logger.fatal('pendingTransactions subscription:', err);
-    process.exit();
+function setWeb3Subscription() {
+  web3.eth.subscribe('pendingTransactions')
+    .on('data', hash => processPendingTxn(hash, 0))
+    .on('error', (err) => {
+      logger.fatal('pendingTransactions subscription:', err);
+      process.exit();
+    });
+
+  web3.eth.subscribe('newBlockHeaders')
+    .on('data', (hdr) => {
+      // Blockchain Height format used by swap service: '1254834'
+      redisClient.set(`Blockchain:${LNSWAP_CHAIN}:Height`, hdr.number, 'EX', BLOCK_HEIGHT_EXPIRATION);
+      updateGasPrice();
+
+      logger.debug('New Block number:', hdr.number, ', hash:', hdr.hash);
+    })
+    .on('error', (err) => {
+      logger.fatal('newBlockHeaders subscription:', err);
+      process.exit();
+    });
+}
+
+function setContractEvents() {
+  swapContract.events.allEvents()
+    .on('data', (event) => {
+      if (event.address !== LNSWAP_CONTRACT_ADDRESS) return;
+
+      redisClient.hmget(
+        `SwapOrder:${event.returnValues.lninvoice}`,
+        'state', 'onchainAmount', 'lnPaymentHash',
+        (err, reply) => {
+          if (!reply || reply.includes(null)) {
+            logger.error('Event: Unknown txn:', event.transactionHash);
+            return;
+          }
+          const [state, onchainAmount, lnPaymentHash] = reply;
+
+          switch (event.event) {
+            case 'orderFunded':
+              if ((state === 'WaitingForFunding' || state === 'WaitingForFundingConfirmation')
+                && onchainAmount === web3.utils.fromWei(event.returnValues.onchainAmount)
+                && lnPaymentHash === event.returnValues.paymentHash.slice(2)) {
+                redisClient.hmset(
+                  `SwapOrder:${event.returnValues.lninvoice}`,
+                  'state', 'WaitingForPayment',
+                  'fundingTxn', event.transactionHash,
+                  'fundingBlockHash', event.blockHash,
+                );
+                logger.info(`Event: orderFunded: ${event.returnValues.lninvoice}`);
+              } else {
+                logger.error('Event: Unknown fundingTxn:', event.transactionHash);
+              }
+              break;
+
+            case 'orderClaimed':
+              if (state === 'WaitingForClaimingConfirmation') {
+                redisClient.hmset(
+                  `SwapOrder:${event.returnValues.lninvoice}`,
+                  'state', 'OrderClaimed',
+                  'claimingTxn', event.transactionHash,
+                  'claimingBlockHash', event.blockHash,
+                );
+                logger.info(`Event: orderClaimed: ${event.returnValues.lninvoice}`);
+              } else {
+                logger.error('Event: Unknown claimingTxn:', event.transactionHash);
+              }
+              break;
+
+            case 'orderRefunded':
+              if (state === 'WaitingForRefund') {
+                redisClient.hmset(
+                  `SwapOrder:${event.returnValues.lninvoice}`,
+                  'state', 'OrderRefunded',
+                  'refundTxn', event.transactionHash,
+                );
+                logger.info(`Event: orderRefunded: ${event.returnValues.lninvoice}`);
+              } else {
+                logger.error('Event: Unknown refundTxn:', event.transactionHash);
+              }
+              break;
+
+            default:
+              logger.error('Found unknown event:', event.event, 'at txn:', event.transactionHash);
+              break;
+          }
+        },
+      );
+    })
+    .on('changed', (event) => {
+      // remove event from local database
+      logger.info('Event changed of txn:', event.transactionHash);
+    })
+    .on('error', (error) => {
+      logger.error('Contract event subscription error:', error);
+      // TODO: restart subscription
+    });
+}
+
+function setWeb3ProviderEvents(_provider) {
+  _provider.on('connect', () => {
+    logger.info('WSS connected');
+
+    setWeb3Subscription();
+    setContractEvents();
   });
+
+  _provider.on('error', e => logger.error('WSS Error:', e));
+
+  _provider.on('end', (e) => {
+    logger.error('WSS closed:', e);
+    setTimeout(() => {
+      logger.error('Attempting to reconnect...');
+      startWeb3();
+    }, 5000);
+  });
+}
+
+function startWeb3() {
+  const provider = new Web3.providers.WebsocketProvider(RINKEBY_WSS);
+  // const provider = new Web3.providers.WebsocketProvider(GETH_WSS, { headers: { Origin: 'http://localhost' } });
+
+  web3.setProvider(provider);
+  setWeb3ProviderEvents(provider);
+}
+
+startWeb3();

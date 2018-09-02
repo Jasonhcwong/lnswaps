@@ -44,8 +44,8 @@ redisSub.on('pmessage', (pattern, channel, message) => {
           // TODO: set lnPaymentLock and state before pay
           payInvoice({ lnd, invoice }, (invoiceErr, payResult) => {
             if (invoiceErr) {
-              logger.error(`payInvoice: ${invoice}, err: ${invoiceErr}`);
               redisClient.hmset(`${prefix}:${invoice}`, 'state', 'WaitingForRefund');
+              logger.error(`payInvoice: ${invoice}, err: ${invoiceErr}`);
             } else {
               redisClient.hmset(`${prefix}:${invoice}`, 'lnPreimage', payResult.payment_secret, 'state', 'WaitingForClaiming');
               logger.info(`payInvoice: ${invoice}, preimage: ${payResult.payment_secret}`);
