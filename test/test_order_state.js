@@ -31,7 +31,7 @@ describe('Order State Tests', () => {
 
   it('[OrderState]encodeMessage: errorUnknownOrderState', (done) => {
     try {
-      orderState.encodeMessage({ invoice, state: 'Unknow state' });
+      orderState.encodeMessage({ invoice, state: 'Unknow state', onchainNetwork });
     } catch (e) {
       if (e.message === orderState.errorUnknownOrderState) done();
     }
@@ -67,7 +67,7 @@ describe('Order State Tests', () => {
 
   it('[OrderState]decodeMessage: errorUnknownOrderState', (done) => {
     try {
-      orderState.decodeMessage('UnknowState:invoice');
+      orderState.decodeMessage('UnknowState:invoice:onchainNetwork');
     } catch (e) {
       if (e.message === orderState.errorUnknownOrderState) done();
     }
@@ -87,11 +87,13 @@ describe('Order State Tests', () => {
     const ret = orderState.decodeMessage(orderState.encodeMessage({
       state: orderState.Init,
       invoice,
+      onchainNetwork,
       lnDestPubKey,
       lnAmount,
     }));
     assert.strictEqual(ret.state, orderState.Init);
     assert.strictEqual(ret.invoice, invoice);
+    assert.strictEqual(ret.onchainNetwork, onchainNetwork);
     assert.strictEqual(ret.lnDestPubKey, lnDestPubKey);
     assert.strictEqual(ret.lnAmount, lnAmount);
     done();
@@ -119,10 +121,12 @@ describe('Order State Tests', () => {
     const ret = orderState.decodeMessage(orderState.encodeMessage({
       state: orderState.WaitingForFundingConfirmation,
       invoice,
+      onchainNetwork,
       fundingTxn,
     }));
     assert.strictEqual(ret.state, orderState.WaitingForFundingConfirmation);
     assert.strictEqual(ret.invoice, invoice);
+    assert.strictEqual(ret.onchainNetwork, onchainNetwork);
     assert.strictEqual(ret.fundingTxn, fundingTxn);
     done();
   });
@@ -131,11 +135,13 @@ describe('Order State Tests', () => {
     const ret = orderState.decodeMessage(orderState.encodeMessage({
       state: orderState.OrderFunded,
       invoice,
+      onchainNetwork,
       fundingTxn,
       fundingBlockHash,
     }));
     assert.strictEqual(ret.state, orderState.OrderFunded);
     assert.strictEqual(ret.invoice, invoice);
+    assert.strictEqual(ret.onchainNetwork, onchainNetwork);
     assert.strictEqual(ret.fundingTxn, fundingTxn);
     assert.strictEqual(ret.fundingBlockHash, fundingBlockHash);
     done();
@@ -145,10 +151,12 @@ describe('Order State Tests', () => {
     const ret = orderState.decodeMessage(orderState.encodeMessage({
       state: orderState.WaitingForClaiming,
       invoice,
+      onchainNetwork,
       lnPreimage,
     }));
     assert.strictEqual(ret.state, orderState.WaitingForClaiming);
     assert.strictEqual(ret.invoice, invoice);
+    assert.strictEqual(ret.onchainNetwork, onchainNetwork);
     assert.strictEqual(ret.lnPreimage, lnPreimage);
     done();
   });
@@ -157,10 +165,12 @@ describe('Order State Tests', () => {
     const ret = orderState.decodeMessage(orderState.encodeMessage({
       state: orderState.WaitingForClaimingConfirmation,
       invoice,
+      onchainNetwork,
       claimingTxn,
     }));
     assert.strictEqual(ret.state, orderState.WaitingForClaimingConfirmation);
     assert.strictEqual(ret.invoice, invoice);
+    assert.strictEqual(ret.onchainNetwork, onchainNetwork);
     assert.strictEqual(ret.claimingTxn, claimingTxn);
     done();
   });
@@ -169,11 +179,13 @@ describe('Order State Tests', () => {
     const ret = orderState.decodeMessage(orderState.encodeMessage({
       state: orderState.OrderClaimed,
       invoice,
+      onchainNetwork,
       claimingTxn,
       claimingBlockHash,
     }));
     assert.strictEqual(ret.state, orderState.OrderClaimed);
     assert.strictEqual(ret.invoice, invoice);
+    assert.strictEqual(ret.onchainNetwork, onchainNetwork);
     assert.strictEqual(ret.claimingTxn, claimingTxn);
     assert.strictEqual(ret.claimingBlockHash, claimingBlockHash);
     done();
@@ -183,10 +195,12 @@ describe('Order State Tests', () => {
     const ret = orderState.decodeMessage(orderState.encodeMessage({
       state: orderState.WaitingForRefund,
       invoice,
+      onchainNetwork,
       refundReason,
     }));
     assert.strictEqual(ret.state, orderState.WaitingForRefund);
     assert.strictEqual(ret.invoice, invoice);
+    assert.strictEqual(ret.onchainNetwork, onchainNetwork);
     assert.strictEqual(ret.refundReason, refundReason);
     done();
   });
@@ -195,10 +209,12 @@ describe('Order State Tests', () => {
     const ret = orderState.decodeMessage(orderState.encodeMessage({
       state: orderState.WaitingForRefundConfirmation,
       invoice,
+      onchainNetwork,
       refundTxn,
     }));
     assert.strictEqual(ret.state, orderState.WaitingForRefundConfirmation);
     assert.strictEqual(ret.invoice, invoice);
+    assert.strictEqual(ret.onchainNetwork, onchainNetwork);
     assert.strictEqual(ret.refundTxn, refundTxn);
     done();
   });
@@ -207,11 +223,13 @@ describe('Order State Tests', () => {
     const ret = orderState.decodeMessage(orderState.encodeMessage({
       state: orderState.OrderRefunded,
       invoice,
+      onchainNetwork,
       refundTxn,
       refundBlockHash,
     }));
     assert.strictEqual(ret.state, orderState.OrderRefunded);
     assert.strictEqual(ret.invoice, invoice);
+    assert.strictEqual(ret.onchainNetwork, onchainNetwork);
     assert.strictEqual(ret.refundTxn, refundTxn);
     assert.strictEqual(ret.refundBlockHash, refundBlockHash);
     done();

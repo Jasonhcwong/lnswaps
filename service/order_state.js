@@ -20,62 +20,63 @@ const errorUnknownOrderState = 'Unknown order state.';
 const errorEmptyMessage = 'Empty Message.';
 
 function encodeMessage({
-  state, invoice, lnDestPubKey, lnPaymentHash, lnAmount, onchainNetwork, onchainAmount,
-  swapAddress, lnPreimage, refundReason,
+  state, invoice, lnDestPubKey, lnPaymentHash, lnAmount, lnPreimage,
+  swapAddress, refundReason, onchainNetwork, onchainAmount,
   fundingTxn, fundingBlockHash, claimingTxn, claimingBlockHash, refundTxn, refundBlockHash,
 }) {
   if (!invoice) throw new Error(errorInvoiceMissing);
+  if (!onchainNetwork) throw new Error(errorIncompleteParameters);
 
   if (state === orderState.Init) {
     if (!lnDestPubKey || !lnAmount) throw new Error(errorIncompleteParameters);
-    return `${state}:${invoice}:${lnDestPubKey}:${lnAmount}`;
+    return `${state}:${invoice}:${onchainNetwork}:${lnDestPubKey}:${lnAmount}`;
   }
 
   if (state === orderState.WaitingForFunding) {
-    if (!onchainNetwork || !onchainAmount || !swapAddress || !lnPaymentHash) {
+    if (!onchainAmount || !swapAddress || !lnPaymentHash) {
       throw new Error(errorIncompleteParameters);
     }
     return `${state}:${invoice}:${onchainNetwork}:${onchainAmount}:${swapAddress}:${lnPaymentHash}`;
   }
 
   if (state === orderState.WaitingForFundingConfirmation) {
-    if (!fundingTxn) throw new Error(errorIncompleteParameters);
-    return `${state}:${invoice}:${fundingTxn}`;
+    if (!onchainNetwork || !fundingTxn) throw new Error(errorIncompleteParameters);
+    return `${state}:${invoice}:${onchainNetwork}:${fundingTxn}`;
   }
 
   if (state === orderState.OrderFunded) {
     if (!fundingTxn || !fundingBlockHash) throw new Error(errorIncompleteParameters);
-    return `${state}:${invoice}:${fundingTxn}:${fundingBlockHash}`;
+    return `${state}:${invoice}:${onchainNetwork}:${fundingTxn}:${fundingBlockHash}`;
   }
 
   if (state === orderState.WaitingForClaiming) {
     if (!lnPreimage) throw new Error(errorIncompleteParameters);
-    return `${state}:${invoice}:${lnPreimage}`;
+    return `${state}:${invoice}:${onchainNetwork}:${lnPreimage}`;
   }
 
   if (state === orderState.WaitingForClaimingConfirmation) {
     if (!claimingTxn) throw new Error(errorIncompleteParameters);
-    return `${state}:${invoice}:${claimingTxn}`;
+    return `${state}:${invoice}:${onchainNetwork}:${claimingTxn}`;
   }
 
   if (state === orderState.OrderClaimed) {
     if (!claimingTxn || !claimingBlockHash) throw new Error(errorIncompleteParameters);
-    return `${state}:${invoice}:${claimingTxn}:${claimingBlockHash}`;
+    return `${state}:${invoice}:${onchainNetwork}:${claimingTxn}:${claimingBlockHash}`;
   }
 
   if (state === orderState.WaitingForRefund) {
     if (!refundReason) throw new Error(errorIncompleteParameters);
-    return `${state}:${invoice}:${refundReason}`;
+    return `${state}:${invoice}:${onchainNetwork}:${refundReason}`;
   }
 
   if (state === orderState.WaitingForRefundConfirmation) {
     if (!refundTxn) throw new Error(errorIncompleteParameters);
-    return `${state}:${invoice}:${refundTxn}`;
+    return `${state}:${invoice}:${onchainNetwork}:${refundTxn}`;
   }
 
   if (state === orderState.OrderRefunded) {
     if (!refundTxn || !refundBlockHash) throw new Error(errorIncompleteParameters);
-    return `${state}:${invoice}:${refundTxn}:${refundBlockHash}`;
+    return `${state}:${invoice}:${onchainNetwork}:${refundTxn}:${refundBlockHash}`;
   }
 
   throw new Error(errorUnknownOrderState);
@@ -85,19 +86,20 @@ function decodeMessage(msg) {
   if (!msg) throw new Error(errorEmptyMessage);
 
   const tokens = msg.split(':');
-  const [state, invoice, ...rest] = tokens;
+  const [state, invoice, onchainNetwork, ...rest] = tokens;
   if (!invoice) throw new Error(errorInvoiceMissing);
+  if (!onchainNetwork) throw new Error(errorIncompleteParameters);
 
   if (state === orderState.Init) {
     const [lnDestPubKey, lnAmount] = rest;
     if (!lnDestPubKey || !lnAmount) throw new Error(errorIncompleteParameters);
     return {
-      state, invoice, lnDestPubKey, lnAmount,
+      state, invoice, onchainNetwork, lnDestPubKey, lnAmount,
     };
   }
 
   if (state === orderState.WaitingForFunding) {
-    const [onchainNetwork, onchainAmount, swapAddress, lnPaymentHash] = rest;
+    const [onchainAmount, swapAddress, lnPaymentHash] = rest;
     if (!onchainNetwork || !onchainAmount || !swapAddress || !lnPaymentHash) {
       throw new Error(errorIncompleteParameters);
     }
@@ -109,54 +111,64 @@ function decodeMessage(msg) {
   if (state === orderState.WaitingForFundingConfirmation) {
     const [fundingTxn] = rest;
     if (!fundingTxn) throw new Error(errorIncompleteParameters);
-    return { state, invoice, fundingTxn };
+    return {
+      state, invoice, onchainNetwork, fundingTxn,
+    };
   }
 
   if (state === orderState.OrderFunded) {
     const [fundingTxn, fundingBlockHash] = rest;
     if (!fundingTxn || !fundingBlockHash) throw new Error(errorIncompleteParameters);
     return {
-      state, invoice, fundingTxn, fundingBlockHash,
+      state, invoice, onchainNetwork, fundingTxn, fundingBlockHash,
     };
   }
 
   if (state === orderState.WaitingForClaiming) {
     const [lnPreimage] = rest;
     if (!lnPreimage) throw new Error(errorIncompleteParameters);
-    return { state, invoice, lnPreimage };
+    return {
+      state, invoice, onchainNetwork, lnPreimage,
+    };
   }
 
   if (state === orderState.WaitingForClaimingConfirmation) {
     const [claimingTxn] = rest;
     if (!claimingTxn) throw new Error(errorIncompleteParameters);
-    return { state, invoice, claimingTxn };
+    return {
+      state, invoice, onchainNetwork, claimingTxn,
+    };
   }
 
   if (state === orderState.OrderClaimed) {
     const [claimingTxn, claimingBlockHash] = rest;
     if (!claimingTxn || !claimingBlockHash) throw new Error(errorIncompleteParameters);
     return {
-      state, invoice, claimingTxn, claimingBlockHash,
+      state, invoice, onchainNetwork, claimingTxn, claimingBlockHash,
     };
   }
 
   if (state === orderState.WaitingForRefund) {
     const [refundReason] = rest;
     if (!refundReason) throw new Error(errorIncompleteParameters);
-    return { state, invoice, refundReason };
+    return {
+      state, invoice, onchainNetwork, refundReason,
+    };
   }
 
   if (state === orderState.WaitingForRefundConfirmation) {
     const [refundTxn] = rest;
     if (!refundTxn) throw new Error(errorIncompleteParameters);
-    return { state, invoice, refundTxn };
+    return {
+      state, invoice, onchainNetwork, refundTxn,
+    };
   }
 
   if (state === orderState.OrderRefunded) {
     const [refundTxn, refundBlockHash] = rest;
     if (!refundTxn || !refundBlockHash) throw new Error(errorIncompleteParameters);
     return {
-      state, invoice, refundTxn, refundBlockHash,
+      state, invoice, onchainNetwork, refundTxn, refundBlockHash,
     };
   }
 

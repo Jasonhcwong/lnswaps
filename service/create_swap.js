@@ -1,6 +1,6 @@
 const async = require('async');
 
-const { redisClient, redisPub } = require('./redis_client');
+const { redisClient, publishRedisMessage } = require('./redis_client');
 const getAddressDetails = require('./get_address_details');
 const getInvoiceDetails = require('./get_invoice_details');
 const getExchangeRates = require('./get_exchange_rates');
@@ -199,8 +199,7 @@ module.exports = ({ invoice, network, refund }, cbk) => async.auto({
         'state', 'WaitingForFunding',
         (err) => {
           if (err) return cbk([400, 'Error creating order in redis']);
-          // TODO try..catch
-          const msg = orderState.encodeMessage({
+          publishRedisMessage({
             state: orderState.WaitingForFunding,
             invoice,
             onchainNetwork: network,
@@ -208,7 +207,6 @@ module.exports = ({ invoice, network, refund }, cbk) => async.auto({
             lnPaymentHash: res.getInvoice.id,
             swapAddress: res.swapAddress.p2sh_p2wsh_address,
           });
-          redisPub.publish(orderState.channel, msg);
         },
       );
       return cbk(null, {

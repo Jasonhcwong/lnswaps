@@ -2,7 +2,7 @@ const async = require('async');
 const { parseInvoice } = require('ln-service');
 
 const getExchangeRates = require('./get_exchange_rates');
-const { redisClient, redisPub } = require('./redis_client');
+const { redisClient, publishRedisMessage } = require('./redis_client');
 const logger = require('./logger');
 const orderState = require('./order_state');
 
@@ -106,14 +106,13 @@ module.exports = ({ invoice, network }, cbk) => {
         'state', 'Init',
         (err) => {
           if (err) return cbk([400, 'Error initializing order in redis']);
-          // TODO: try..catch
-          const msg = orderState.encodeMessage({
-            invoice,
+          publishRedisMessage({
             state: orderState.Init,
+            invoice,
+            onchainNetwork: network,
             lnDestPubKey: parsed.destination,
             lnAmount: parsed.tokens,
           });
-          redisPub.publish(orderState.channel, msg);
           return cbk(null, parsed);
         },
       );
