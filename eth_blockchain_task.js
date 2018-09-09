@@ -1,7 +1,8 @@
 const Web3 = require('web3');
 const fs = require('fs');
 const log4js = require('log4js');
-const { redisClient, redisSub } = require('./service/redis_client.js');
+const { redisClient, redisSub, redisPub } = require('./service/redis_client.js');
+const orderState = require('./service/order_state.js');
 
 const BLOCK_HEIGHT_EXPIRATION = 60; // seconds
 const FEE_ESTIMATION_EXPIRATION = 60; // seconds
@@ -49,15 +50,12 @@ function claimTransaction({ invoice, lnPreimage }) {
       // logger.debug('raw claim transaction:', rawTransaction);
       web3.eth.sendSignedTransaction(rawTransaction)
         .on('transactionHash', (hash) => {
-          redisClient.hmset(`SwapOrder:${invoice}`, 'claimingTxn',
+          redisClient.hmset(`${orderState.prefix}:${invoice}`, 'claimingTxn',
             hash, 'state', 'WaitingForClaimingConfirmation');
+          // TODO: try..catch
+          const msg = orderState.encodeMessage({ state: orderState.WaitingForClaimingConfirmation, invoice, claimingTxn: hash });
+          redisPub.publish(orderState.channel, msg);
           logger.info('claimTransaction: hash:', hash);
-        })
-        .on('confirmation', (confNo) => {
-          if (confNo === 1) {
-            redisClient.hset(`SwapOrder:${invoice}`, 'state', 'OrderClaimed');
-            logger.debug('claimTransaction: confNo:', confNo);
-          }
         })
         .on('error', (err) => {
           logger.error('claimTransaction:', err);
@@ -68,42 +66,45 @@ function claimTransaction({ invoice, lnPreimage }) {
     });
 }
 
-redisSub.on('psubscribe', (pattern, count) => {
-  logger.info('[psubcribe]pattern: ', pattern, ', count: ', count);
+redisSub.on('subscribe', (channel, count) => {
+  logger.info(`[subcribe]channel: ${channel}, count: ${count}`);
 });
 
-redisSub.on('pmessage', (pattern, channel, message) => {
-  logger.debug('[pmessage]channel ', channel, ': ', message);
-  if (message === 'hset') {
-    const [, prefix, invoice] = channel.split(':');
-    // get order from redis
-    redisClient.hmget(
-      `${prefix}:${invoice}`,
-      'state', 'fundingTxn', 'onchainAmount', 'lnPaymentHash',
-      'lnPreimage', 'onchainNetwork',
-      (err, reply) => {
-        const [state, fundingTxn, onchainAmount, lnPaymentHash, lnPreimage,
-          onchainNetwork] = reply;
+redisSub.on('message', (channel, msg) => {
+  logger.debug(`[message]${channel}: ${msg}`);
+  if (channel !== orderState.channel) return;
 
-        // only handle order belong to this network
-        if (onchainNetwork !== LNSWAP_CHAIN) return;
+  try {
+    const {
+      state, invoice, onchainNetwork, onchainAmount, lnPaymentHash, fundingTxn, lnPreimage,
+    } = orderState.decodeMessage(msg);
+    // only handle orders belong to this chain
+    if (onchainNetwork !== LNSWAP_CHAIN) return;
 
-        // waiting for funding
-        if (state === 'WaitingForFunding' && !fundingTxn) {
-          interestedInvoices.set(invoice, { onchainAmount, lnPaymentHash });
-          logger.info('added interestedInvoice: ', invoice);
-        } else if (state === 'WaitingForFundingConfirmation' && fundingTxn) {
-          interestedTxns.set(fundingTxn, invoice);
-          logger.info('added interestedTxn: ', fundingTxn);
-        } else if (state === 'WaitingForClaiming' && lnPreimage) {
-          claimTransaction({ invoice, lnPreimage });
-        }
-      },
-    );
+    switch (state) {
+      case orderState.WaitingForFunding:
+        interestedInvoices.set(invoice, { onchainAmount, lnPaymentHash });
+        logger.info('added interestedInvoice: ', invoice);
+        break;
+
+      case orderState.WaitingForFundingConfirmation:
+        interestedTxns.set(fundingTxn, invoice);
+        logger.info('added interestedTxn: ', fundingTxn);
+        break;
+
+      case orderState.WaitingForClaiming:
+        claimTransaction({ invoice, lnPreimage });
+        break;
+
+      default:
+        break;
+    }
+  } catch (e) {
+    logger.error(e);
   }
 });
 
-redisSub.psubscribe('__keyspace@0__:SwapOrder:*');
+redisSub.subscribe(orderState.channel);
 
 function updateGasPrice() {
   web3.eth.getGasPrice()
@@ -140,10 +141,17 @@ function updatePendingTxn({ txn }) {
     && interestedInvoice.onchainAmount === web3.utils.fromWei(txn.value)
     && interestedInvoice.lnPaymentHash === decodedParams.paymentHash.slice(2)) {
     redisClient.hmset(
-      `SwapOrder:${decodedParams.lninvoice}`,
+      `${orderState.prefix}:${decodedParams.lninvoice}`,
       'fundingTxn', txn.hash,
       'state', 'WaitingForFundingConfirmation',
     );
+    // TODO: try..catch
+    const msg = orderState.encodeMessage({
+      fundingTxn: txn.hash,
+      state: orderState.WaitingForFundingConfirmation,
+      invoice: decodedParams.lninvoice,
+    });
+    redisPub.publish(orderState.channel, msg);
 
     interestedTxns.set(txn.hash, decodedParams.lninvoice);
 
@@ -194,7 +202,7 @@ function setContractEvents() {
       if (event.address !== LNSWAP_CONTRACT_ADDRESS) return;
 
       redisClient.hmget(
-        `SwapOrder:${event.returnValues.lninvoice}`,
+        `${orderState.prefix}:${event.returnValues.lninvoice}`,
         'state', 'onchainAmount', 'lnPaymentHash',
         (err, reply) => {
           if (!reply || reply.includes(null)) {
@@ -209,11 +217,14 @@ function setContractEvents() {
                 && onchainAmount === web3.utils.fromWei(event.returnValues.onchainAmount)
                 && lnPaymentHash === event.returnValues.paymentHash.slice(2)) {
                 redisClient.hmset(
-                  `SwapOrder:${event.returnValues.lninvoice}`,
-                  'state', 'WaitingForPayment',
+                  `${orderState.prefix}:${event.returnValues.lninvoice}`,
+                  'state', orderState.OrderFunded,
                   'fundingTxn', event.transactionHash,
                   'fundingBlockHash', event.blockHash,
                 );
+                // TODO: try...catch
+                const msg = orderState.encodeMessage({ state: orderState.OrderFunded, invoice: event.returnValues.lninvoice });
+                redisPub.publish(orderState.channel, msg);
                 logger.info(`Event: orderFunded: ${event.returnValues.lninvoice}`);
               } else {
                 logger.error('Event: Unknown fundingTxn:', event.transactionHash);
@@ -223,11 +234,19 @@ function setContractEvents() {
             case 'orderClaimed':
               if (state === 'WaitingForClaimingConfirmation') {
                 redisClient.hmset(
-                  `SwapOrder:${event.returnValues.lninvoice}`,
+                  `${orderState.prefix}:${event.returnValues.lninvoice}`,
                   'state', 'OrderClaimed',
                   'claimingTxn', event.transactionHash,
                   'claimingBlockHash', event.blockHash,
                 );
+                // TODO: try...catch
+                const msg = orderState.encodeMessage({
+                  state: orderState.OrderClaimed,
+                  invoice: event.returnValues.lninvoice,
+                  claimingTxn: event.transactionHash,
+                  claimingBlockHash: event.blockHash,
+                });
+                redisPub.publish(orderState.channel, msg);
                 logger.info(`Event: orderClaimed: ${event.returnValues.lninvoice}`);
               } else {
                 logger.error('Event: Unknown claimingTxn:', event.transactionHash);
@@ -237,10 +256,19 @@ function setContractEvents() {
             case 'orderRefunded':
               if (state === 'WaitingForRefund') {
                 redisClient.hmset(
-                  `SwapOrder:${event.returnValues.lninvoice}`,
+                  `${orderState.prefix}:${event.returnValues.lninvoice}`,
                   'state', 'OrderRefunded',
                   'refundTxn', event.transactionHash,
+                  'refundBlockHash', event.blockHash,
                 );
+                // TODO: try...catch
+                const msg = orderState.encodeMessage({
+                  state: orderState.OrderRefunded,
+                  invoice: event.returnValues.lninvoice,
+                  refundTxn: event.transactionHash,
+                  refundBlockHash: event.blockHash,
+                });
+                redisPub.publish(orderState.channel, msg);
                 logger.info(`Event: orderRefunded: ${event.returnValues.lninvoice}`);
               } else {
                 logger.error('Event: Unknown refundTxn:', event.transactionHash);

@@ -2,8 +2,9 @@ const async = require('async');
 const { parseInvoice } = require('ln-service');
 
 const getExchangeRates = require('./get_exchange_rates');
-const { redisClient } = require('./redis_client');
+const { redisClient, redisPub } = require('./redis_client');
 const logger = require('./logger');
+const orderState = require('./order_state');
 
 const estimatedTxVirtualSize = 200;
 
@@ -105,6 +106,14 @@ module.exports = ({ invoice, network }, cbk) => {
         'state', 'Init',
         (err) => {
           if (err) return cbk([400, 'Error initializing order in redis']);
+          // TODO: try..catch
+          const msg = orderState.encodeMessage({
+            invoice,
+            state: orderState.Init,
+            lnDestPubKey: parsed.destination,
+            lnAmount: parsed.tokens,
+          });
+          redisPub.publish(orderState.channel, msg);
           return cbk(null, parsed);
         },
       );

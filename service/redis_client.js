@@ -10,6 +10,7 @@ if (!LNSWAP_REDIS_URL) {
   process.exit();
 }
 
+const redisPub = redis.createClient(LNSWAP_REDIS_URL);
 const redisSub = redis.createClient(LNSWAP_REDIS_URL);
 const redisClient = redis.createClient(LNSWAP_REDIS_URL);
 
@@ -24,6 +25,7 @@ redisClient.on('error', (err) => {
 });
 
 module.exports = {
-  redisClient,
+  redisPub,
   redisSub,
+  redisClient,
 };

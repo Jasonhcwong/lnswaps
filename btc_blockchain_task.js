@@ -165,7 +165,7 @@ zmqSocket.on('message', (topic, message) => {
         redisClient.hmset(
           `SwapOrder:${invoice}`,
           'fundingBlockHash', blk.getId(),
-          'state', 'WaitingForPayment',
+          'state', 'OrderFunded',
           (err) => {
             if (err) {
               logger.error('updating order:', invoice);
