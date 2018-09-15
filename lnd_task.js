@@ -1,6 +1,6 @@
 const { getRoutes, payInvoice } = require('ln-service');
 const log4js = require('log4js');
-const { redisClient, redisSub, publishRedisMessage } = require('./service/redis_client.js');
+const { redisClient, redisSub, updateRedisOrderAndPublish } = require('./service/redis_client.js');
 const { lnd } = require('./service/lnd.js');
 const orderState = require('./service/order_state.js');
 
@@ -15,47 +15,37 @@ redisSub.on('message', (channel, msg) => {
   logger.debug(`[message]${channel}: ${msg}`);
   if (channel !== orderState.channel) return;
 
-  try {
-    const {
-      state, invoice, onchainNetwork, lnDestPubKey, lnAmount,
-    } = orderState.decodeMessage(msg);
+  const {
+    state, invoice, onchainNetwork, lnDestPubKey, lnAmount,
+  } = orderState.decodeMessage(msg);
 
-    if (state === orderState.Init) {
-      getRoutes({ destination: lnDestPubKey, lnd, tokens: lnAmount }, (err, routes) => {
-        if (err) {
-          logger.error(`getRoutes to ${lnDestPubKey}, amount: ${lnAmount}, invoice: ${invoice}, err: ${err}`);
-        } else {
-          redisClient.hset(`${orderState.prefix}:${invoice}`, 'lnRoutes', JSON.stringify(routes));
-          logger.info(`getRoutes to ${lnDestPubKey}, routes: ${JSON.stringify(routes)}`);
-        }
-      });
-    } else if (state === orderState.OrderFunded) {
-      // TODO: set lnPaymentLock and state before pay
-      payInvoice({ lnd, invoice }, (err, payResult) => {
-        const refundReason = 'Lightning payment failed.';
-        let newState = orderState.WaitingForRefund;
-        let lnPreimage;
+  if (state === orderState.Init) {
+    getRoutes({ destination: lnDestPubKey, lnd, tokens: lnAmount }, (err, routes) => {
+      if (err) {
+        logger.error(`getRoutes to ${lnDestPubKey}, amount: ${lnAmount}, invoice: ${invoice}, err: ${err}`);
+      } else {
+        // do NOT pubulish any message
+        redisClient.hset(`${orderState.prefix}:${invoice}`, 'lnRoutes', JSON.stringify(routes));
+        logger.info(`getRoutes to ${lnDestPubKey}, routes: ${JSON.stringify(routes)}`);
+      }
+    });
+  } else if (state === orderState.OrderFunded) {
+    // TODO: set lnPaymentLock and state before pay
+    payInvoice({ lnd, invoice }, (err, payResult) => {
+      const refundReason = 'Lightning payment failed.';
+      const newState = err ? orderState.WaitingForRefund : orderState.WaitingForClaiming;
+      const lnPreimage = payResult ? payResult.payment_secret : '';
 
-        if (err) {
-          redisClient.hmset(`${orderState.prefix}:${invoice}`, 'state', 'WaitingForRefund', 'refundReason', refundReason);
-          logger.error(`payInvoice: ${invoice}, err: ${err}`);
-        } else {
-          redisClient.hmset(`${orderState.prefix}:${invoice}`, 'lnPreimage', payResult.payment_secret, 'state', 'WaitingForClaiming');
-          logger.info(`payInvoice: ${invoice}, preimage: ${payResult.payment_secret}`);
-          newState = orderState.WaitingForClaiming;
-          lnPreimage = payResult.payment_secret;
-        }
-        publishRedisMessage({
-          state: newState,
-          invoice,
-          onchainNetwork,
-          refundReason,
-          lnPreimage,
-        });
-      });
-    }
-  } catch (e) {
-    logger.error(`encodeing msg: ${e.message}`);
+      if (err) logger.error(`payInvoice ${invoice} failed: ${err}`);
+      updateRedisOrderAndPublish(`${orderState.prefix}:${invoice}`, {
+        state: newState,
+        invoice,
+        onchainNetwork,
+        refundReason,
+        lnPreimage,
+      }).then(() => logger.info(`payInvoice: ${invoice}, preimage: ${lnPreimage}`))
+        .catch(e => logger.error(`Error updateRedisOrderAndPublish after payInvoice: ${e}`));
+    });
   }
 });
 

@@ -1,6 +1,6 @@
 const async = require('async');
 
-const { redisClient, publishRedisMessage } = require('./redis_client');
+const { redisClient, updateRedisOrderAndPublish } = require('./redis_client');
 const getAddressDetails = require('./get_address_details');
 const getInvoiceDetails = require('./get_invoice_details');
 const getExchangeRates = require('./get_exchange_rates');
@@ -185,31 +185,21 @@ module.exports = ({ invoice, network, refund }, cbk) => async.auto({
       } else if (network.startsWith('eth')) {
         onchainCurrency = 'ETH';
       }
-      redisClient.hmset(
-        `SwapOrder:${invoice}`,
-        'onchainCurrency', onchainCurrency,
-        'onchainNetwork', network,
-        'onchainAmount', res.getSwapAmount.tokens,
-        'orderCreationTime', new Date().toISOString(),
-        'swapAddress', res.swapAddress.p2sh_p2wsh_address,
-        'swapKeyIndex', res.serverDestinationKey.swapKeyIndex || 'ethereum',
-        'refundAddress', refund || 'ethereum',
-        'redeemScript', res.swapAddress.redeem_script || 'ethereum',
-        'timeoutBlockNo', res.timeoutBlockHeight,
-        'state', 'WaitingForFunding',
-        (err) => {
-          if (err) return cbk([400, 'Error creating order in redis']);
-          publishRedisMessage({
-            state: orderState.WaitingForFunding,
-            invoice,
-            onchainNetwork: network,
-            onchainAmount: res.getSwapAmount.tokens,
-            lnPaymentHash: res.getInvoice.id,
-            swapAddress: res.swapAddress.p2sh_p2wsh_address,
-          });
-        },
-      );
-      return cbk(null, {
+
+      updateRedisOrderAndPublish(`${orderState.prefix}:${invoice}`, {
+        state: orderState.WaitingForFunding,
+        invoice,
+        onchainNetwork: network,
+        onchainCurrency,
+        onchainAmount: res.getSwapAmount.tokens,
+        lnPaymentHash: res.getInvoice.id,
+        orderCreationTime: new Date().toISOString(),
+        swapAddress: res.swapAddress.p2sh_p2wsh_address,
+        swapKeyIndex: res.serverDestinationKey.swapKeyIndex || 'ethereum',
+        refundAddress: refund || 'ethereum',
+        redeemScript: res.swapAddress.redeem_script || 'ethereum',
+        timeoutBlockNo: res.timeoutBlockHeight,
+      }).then(() => cbk(null, {
         invoice,
         destination_public_key: res.serverDestinationKey.public_key,
         payment_hash: res.getInvoice.id,
@@ -222,6 +212,8 @@ module.exports = ({ invoice, network, refund }, cbk) => async.auto({
         swap_p2sh_p2wsh_address: res.swapAddress.p2sh_p2wsh_address,
         swap_p2wsh_address: res.swapAddress.p2wsh_address,
         timeout_block_height: res.timeoutBlockHeight,
+      })).catch((err) => {
+        logger.error(`Error creating order: ${err}`);
       });
     }],
 }, (err, result) => {

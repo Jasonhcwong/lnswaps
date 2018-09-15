@@ -1,5 +1,6 @@
 const redis = require('redis');
 const log4js = require('log4js');
+const { promisify } = require('util');
 
 const orderState = require('./order_state');
 
@@ -15,6 +16,14 @@ const redisPub = redis.createClient(LNSWAP_REDIS_URL);
 const redisSub = redis.createClient(LNSWAP_REDIS_URL);
 const redisClient = redis.createClient(LNSWAP_REDIS_URL);
 
+const hmsetAsync = promisify(redisClient.hmset).bind(redisClient);
+const publishAsync = promisify(redisPub.publish).bind(redisPub);
+
+redisPub.on('error', (err) => {
+  logger.fatal('Redis Error ', err);
+  process.exit();
+});
+
 redisSub.on('error', (err) => {
   logger.fatal('Redis Error ', err);
   process.exit();
@@ -25,27 +34,31 @@ redisClient.on('error', (err) => {
   process.exit();
 });
 
-function updateRedisOrder({ key, newState, params }) {
-  redisClient.hmset(key, 'state', newState, params, (err) => {
-    if (err) {
-      logger.error(`updating order state: ${err}`);
-    }
-  });
+function updateRedisOrderAndPublish(orderKey, params) {
+  const paramArray = [];
+  Object.keys(params).forEach(key => paramArray.push(key, params[key]));
+  // TODO: lock order before updating
+  return hmsetAsync(orderKey, paramArray)
+    .then(() => publishAsync(orderState.channel, orderState.encodeMessage(params)));
 }
 
 function publishRedisMessage(params) {
-  try {
-    const msg = orderState.encodeMessage(params);
-    redisPub.publish(orderState.channel, msg);
-  } catch (e) {
-    logger.error(`encodeing msg: ${e.message}`);
-  }
+  return publishAsync(orderState.channel, orderState.encodeMessage(params));
+}
+
+function redisQuit() {
+  redisSub.unsubscribe();
+  redisSub.quit();
+  redisPub.quit();
+  redisClient.quit();
 }
 
 module.exports = {
   redisPub,
   redisSub,
   redisClient,
-  updateRedisOrder,
+  updateRedisOrderAndPublish,
   publishRedisMessage,
+  redisQuit,
+  ReplyError: redis.ReplyError,
 };

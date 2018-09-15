@@ -2,7 +2,7 @@ const async = require('async');
 const { parseInvoice } = require('ln-service');
 
 const getExchangeRates = require('./get_exchange_rates');
-const { redisClient, publishRedisMessage } = require('./redis_client');
+const { redisClient, updateRedisOrderAndPublish, ReplyError } = require('./redis_client');
 const logger = require('./logger');
 const orderState = require('./order_state');
 
@@ -13,7 +13,7 @@ const maxLNInvoiceAmount = 4194304; // satoshi
 const maxLNRoutingFeePercentage = 0.01;
 
 function waitForRoutes(invoice, count, cbk) {
-  redisClient.hget(`SwapOrder:${invoice}`, 'lnRoutes', (err, reply) => {
+  redisClient.hget(`${orderState.prefix}:${invoice}`, 'lnRoutes', (err, reply) => {
     if (err) {
       logger.error('Error reading lnRoutes', err);
       return cbk([400, 'CannotReadLNRoutes']);
@@ -92,30 +92,28 @@ module.exports = ({ invoice, network }, cbk) => {
         return cbk([400, 'InvoiceAmountTooLarge']);
       }
 
-      redisClient.hmset(
-        `SwapOrder:${invoice}`,
-        'lnCreationDate', parsed.created_at,
-        'lnDescription', parsed.description,
-        'lnDestPubKey', parsed.destination,
-        'lnExpiryDate', parsed.expires_at,
-        'lnPaymentHash', parsed.id,
-        'lnPreimage', '',
-        'lnCurrency', 'BTC',
-        'lnAmount', parsed.tokens,
-        'lnPaymentLock', '',
-        'state', 'Init',
-        (err) => {
-          if (err) return cbk([400, 'Error initializing order in redis']);
-          publishRedisMessage({
-            state: orderState.Init,
-            invoice,
-            onchainNetwork: network,
-            lnDestPubKey: parsed.destination,
-            lnAmount: parsed.tokens,
-          });
+      updateRedisOrderAndPublish(`${orderState.prefix}:${invoice}`, {
+        state: orderState.Init,
+        invoice,
+        onchainNetwork: network,
+        lnCreationDate: parsed.created_at,
+        lnDescription: parsed.description,
+        lnDestPubKey: parsed.destination,
+        lnExpiryDate: parsed.expires_at,
+        lnPaymentHash: parsed.id,
+        lnPreimage: '',
+        lnCurrency: 'BTC',
+        lnAmount: parsed.tokens,
+        lnPaymentLock: '',
+      }).then(() => cbk(null, parsed))
+        .catch((e) => {
+          if (e instanceof ReplyError && e.command === 'HMSET') {
+            logger.error('Error when updating DB:', e);
+            return cbk([400, 'Error when updating DB']);
+          }
+          logger.error('Error when publish msg:', e);
           return cbk(null, parsed);
-        },
-      );
+        });
     },
 
     // Get the current fee rate and fiat rates
