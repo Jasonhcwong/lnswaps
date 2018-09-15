@@ -1,12 +1,13 @@
 const zmq = require('zmq');
 const bitcoinRpc = require('node-bitcoin-rpc');
-const bitcoin = require('bitcoinjs-lib');
-const { networks, crypto } = require('bitcoinjs-lib');
 const { mnemonicToSeed, validateMnemonic } = require('bip39');
 const bip65Encode = require('bip65').encode;
 const log4js = require('log4js');
-const { HDNode, Transaction } = require('./tokenslib');
-const { redisClient, redisSub } = require('./service/redis_client.js');
+const bitcoin = require('./tokenslib');
+const { Transaction, networks } = require('./tokenslib');
+const { HDNode, crypto } = require('./tokenslib');
+const { redisClient, redisSub, updateRedisOrderAndPublish } = require('./service/redis_client.js');
+const orderState = require('./service/order_state.js');
 
 const logger = log4js.getLogger();
 logger.level = 'all';
@@ -23,7 +24,7 @@ const interestedTxns = new Map(); // txid => (invoice)
 
 const {
   LNSWAP_CHAIN, LNSWAP_CHAIN_RPC_API, LNSWAP_CLAIM_ADDRESS,
-  LNSWAP_CLAIM_BIP39_SEED, LNSWAP_CHAIN_ZMQ_URL,
+  LNSWAP_CLAIM_BIP39_SEED, LNSWAP_CHAIN_ZMQ_RAWBLOCK_URL, LNSWAP_CHAIN_ZMQ_RAWTX_URL,
 } = process.env;
 
 switch (LNSWAP_CHAIN) {
@@ -54,7 +55,8 @@ if (!validateMnemonic(LNSWAP_CLAIM_BIP39_SEED)) {
 const seed = mnemonicToSeed(LNSWAP_CLAIM_BIP39_SEED);
 const root = HDNode.fromSeedBuffer(seed, bitcoinjsNetwork);
 
-const zmqSocket = zmq.socket('sub');
+const zmqRawBlockSocket = zmq.socket('sub');
+const zmqRawTxSocket = zmq.socket('sub');
 
 let currentBlockHeight = 0;
 
@@ -80,10 +82,9 @@ function claimTransaction({
   invoice, onchainAmount, fundingTxnIndex, fundingTxn, redeemScript, swapKeyIndex, lnPreimage,
 }) {
   const tx = new bitcoin.Transaction();
-
   // add output: claimAddress and (onchainAmount - txnFee)
   const scriptPubKey = bitcoin.address.toOutputScript(LNSWAP_CLAIM_ADDRESS, bitcoinjsNetwork);
-  tx.addOutput(scriptPubKey, onchainAmount - 1000);
+  tx.addOutput(scriptPubKey, parseFloat(onchainAmount) * 100000000 - 1000);
 
   // add input: fundingTxn, fundingTxnIndex and sequence
   tx.addInput(Buffer.from(fundingTxn, 'hex').reverse(), parseInt(fundingTxnIndex, DEC_BASE));
@@ -101,7 +102,7 @@ function claimTransaction({
   // set witness data
   const { keyPair } = root.derivePath(`m/0'/0/${swapKeyIndex}`);
   const sigHash = tx.hashForWitnessV0(0, redeemBuf,
-    parseInt(onchainAmount, DEC_BASE), Transaction.SIGHASH_ALL);
+    parseFloat(onchainAmount, DEC_BASE) * 100000000, Transaction.SIGHASH_ALL);
   const signature = keyPair.sign(sigHash).toScriptSignature(Transaction.SIGHASH_ALL);
   const witness = [signature, Buffer.from(lnPreimage, 'hex'), redeemBuf];
   tx.setWitness(0, witness);
@@ -112,142 +113,126 @@ function claimTransaction({
     if (err) {
       logger.error(`sendrawtransaction(): ${err}`);
     } else {
-      logger.info('claim transaction sent, ID:', tx.getId());
+      logger.info('claimTransaction: hash:', tx.getId());
 
-      redisClient.hmset(
-        `SwapOrder:${invoice}`,
-        'claimningTxn', tx.getId(),
-        'state', 'WaitingForClaimingConfirmation',
-        (redisErr) => {
-          if (redisErr) {
-            logger.error(`updating order: ${invoice}: ${redisErr}`);
-          }
-        },
-      );
+      updateRedisOrderAndPublish(`${orderState.prefix}:${invoice}`, {
+        state: orderState.WaitingForClaimingConfirmation,
+        invoice,
+        onchainNetwork: LNSWAP_CHAIN,
+        claimingTxn: tx.getId(),
+      }).catch(e => logger.error(`Error updateRedisOrderAndPublish: ${e}`));
     }
   });
 }
 
 bitcoinRpc.init(rpcHost, parseInt(rpcPort, DEC_BASE), rpcUsername, rpcPassword);
 
-zmqSocket.on('message', (topic, message) => {
-  if (topic.toString() === 'rawtx') {
-    const txn = bitcoin.Transaction.fromHex(message.toString('hex'));
-    const outputAddresses = getAddressesFromOuts(txn.outs);
+zmqRawTxSocket.on('message', (topic, message) => {
+  if (topic.toString() !== 'rawtx') return;
 
-    outputAddresses.forEach(({ address, tokens, index }) => {
-      const addrInfo = interestedAddrs.get(address);
-      if (addrInfo && parseInt(addrInfo.reqTokens, DEC_BASE) === tokens) {
-        redisClient.hmset(
-          `SwapOrder:${addrInfo.invoice}`,
-          'fundingTxn', txn.getId(),
-          'fundingTxnIndex', index,
-          'state', 'WaitingForFundingConfirmation',
-          (err) => {
-            if (err) {
-              logger.error('updating order:', addrInfo.invoice);
-            } else {
-              logger.info(`found funding outpoint ${txn.getId()}:${index} for addr ${address} for invoice ${addrInfo.invoice}`);
-            }
-          },
-        );
-        interestedAddrs.delete(address);
-      }
-    });
-  }
+  const txn = bitcoin.Transaction.fromHex(message.toString('hex'));
+  const outputAddresses = getAddressesFromOuts(txn.outs);
 
-  if (topic.toString() === 'rawblock') {
-    const blk = bitcoin.Block.fromHex(message.toString('hex'));
-    const txns = blk.transactions;
-    txns.forEach((txn) => {
-      const invoice = interestedTxns.get(txn.getId());
-      if (invoice) {
-        redisClient.hmset(
-          `SwapOrder:${invoice}`,
-          'fundingBlockHash', blk.getId(),
-          'state', 'OrderFunded',
-          (err) => {
-            if (err) {
-              logger.error('updating order:', invoice);
-            } else {
-              logger.info(`confirmed txn ${txn.getId()} at block ${blk.getId()}`);
-            }
-          },
-        );
-        interestedTxns.delete(txn.getId());
-      }
-    });
-  }
+  outputAddresses.forEach(({ address, tokens, index }) => {
+    const addrInfo = interestedAddrs.get(address);
+    if (addrInfo && parseFloat(addrInfo.reqTokens, DEC_BASE) === parseFloat(tokens) / 100000000) {
+      logger.info(`found funding outpoint ${txn.getId()}:${index} for addr ${address} for invoice ${addrInfo.invoice}`);
+
+      updateRedisOrderAndPublish(`${orderState.prefix}:${addrInfo.invoice}`, {
+        state: orderState.WaitingForFundingConfirmation,
+        invoice: addrInfo.invoice,
+        onchainNetwork: LNSWAP_CHAIN,
+        fundingTxn: txn.getId(),
+        fundingTxnIndex: index,
+      }).catch(e => logger.error(`Error updateRedisOrderAndPublish: ${e}`));
+
+      interestedAddrs.delete(address);
+    }
+  });
 });
 
-zmqSocket.connect(LNSWAP_CHAIN_ZMQ_URL);
-zmqSocket.subscribe('rawtx');
-zmqSocket.subscribe('rawblock');
+zmqRawBlockSocket.on('message', (topic, message) => {
+  if (topic.toString() !== 'rawblock') return;
+  const blk = bitcoin.Block.fromHex(message.toString('hex'));
+  const txns = blk.transactions;
+  txns.forEach((txn) => {
+    const invoice = interestedTxns.get(txn.getId());
+    if (invoice) {
+      logger.info(`orderFunded ${txn.getId()} for invoice ${invoice}`);
+      updateRedisOrderAndPublish(`${orderState.prefix}:${invoice}`, {
+        state: orderState.OrderFunded,
+        invoice,
+        onchainNetwork: LNSWAP_CHAIN,
+        fundingTxn: txn.getId(),
+        fundingBlockHash: blk.getId(),
+      }).catch(e => logger.error(`Error updateRedisOrderAndPublish: ${e}`));
 
-redisSub.on('psubscribe', (pattern, count) => {
-  logger.info('[psubcribe]pattern: ', pattern, ', count: ', count);
+      interestedTxns.delete(txn.getId());
+    }
+  });
 });
 
-redisSub.on('pmessage', (pattern, channel, message) => {
-  logger.debug('[pmessage]pattern: ', pattern, ', channel ', channel, ': ', message);
-  if (message === 'hset') {
-    const [, prefix, invoice] = channel.split(':');
+zmqRawBlockSocket.connect(LNSWAP_CHAIN_ZMQ_RAWBLOCK_URL);
+zmqRawBlockSocket.subscribe('rawblock');
 
-    // get order from redis
-    redisClient.hmget(
-      `${prefix}:${invoice}`,
-      'state', 'fundingTxn', 'fundingTxnIndex', 'swapAddress', 'onchainAmount',
-      'swapKeyIndex', 'redeemScript', 'lnPreimage', 'onchainNetwork',
-      (err, reply) => {
-        if (!err) {
-          if (!reply) {
-            logger.error('order is NULL:', invoice);
-          } else {
-            const [state, fundingTxn, fundingTxnIndex, swapAddress, onchainAmount,
-              swapKeyIndex, redeemScript, lnPreimage, onchainNetwork] = reply;
+zmqRawTxSocket.connect(LNSWAP_CHAIN_ZMQ_RAWTX_URL);
+zmqRawTxSocket.subscribe('rawtx');
 
-            // only handle order belong to this network
-            if (onchainNetwork !== LNSWAP_CHAIN) return;
+redisSub.on('message', (channel, msg) => {
+  logger.debug(`[message]${channel}: ${msg}`);
+  if (channel !== orderState.channel) return;
 
-            // waiting for funding
-            if (state === 'WaitingForFunding' && !fundingTxn) {
-              interestedAddrs.set(swapAddress, { reqTokens: onchainAmount, invoice });
-              logger.info(`added interestedAddr: ${swapAddress}, onchainAmount: ${onchainAmount}, invoice: ${invoice}`);
+  try {
+    const {
+      state, invoice, onchainNetwork, onchainAmount, fundingTxn, lnPreimage, swapAddress,
+    } = orderState.decodeMessage(msg);
+    // only handle orders belong to this chain
+    if (onchainNetwork !== LNSWAP_CHAIN) return;
 
-            // online txn found
-            } else if (state === 'WaitingForFundingConfirmation' && fundingTxn) {
-              interestedTxns.set(fundingTxn, invoice);
-            } else if (state === 'WaitingForClaiming') {
-              // offline payment finished
-              if (!fundingTxn
-                  || !fundingTxnIndex
-                  || !onchainAmount
-                  || !swapKeyIndex
-                  || !redeemScript
-                  || !lnPreimage) {
-                logger.error('WaitingForClaiming: cannot get data from redis');
-              } else {
-                claimTransaction({
-                  invoice,
-                  fundingTxn,
-                  fundingTxnIndex,
-                  onchainAmount,
-                  swapKeyIndex,
-                  redeemScript,
-                  lnPreimage,
-                });
-              }
-            }
+    switch (state) {
+      case orderState.WaitingForFunding:
+        interestedAddrs.set(swapAddress, { reqTokens: onchainAmount, invoice });
+        logger.info(`added interestedAddr: ${swapAddress}, onchainAmount: ${onchainAmount}, invoice: ${invoice}`);
+        break;
+
+      case orderState.WaitingForFundingConfirmation:
+        interestedTxns.set(fundingTxn, invoice);
+        logger.info('added interestedTxn: ', fundingTxn);
+        break;
+
+      case orderState.WaitingForClaiming:
+        redisClient.hmget(`${orderState.prefix}:${invoice}`, 'fundingTxn', 'fundingTxnIndex', 'swapKeyIndex', 'redeemScript', 'onchainAmount', (err, reply) => {
+          if (!reply || reply.includes(null)) {
+            logger.error('error getting order:', invoice);
+            return;
           }
-        } else {
-          logger.error('Cannot get order from redis:', invoice);
-        }
-      },
-    );
+          const [fundingTxnClaim, fundingTxnIndex, swapKeyIndex, redeemScript,
+            onchainAmountClaim] = reply;
+          claimTransaction({
+            invoice,
+            onchainAmount: onchainAmountClaim,
+            lnPreimage,
+            fundingTxn: fundingTxnClaim,
+            fundingTxnIndex,
+            swapKeyIndex,
+            redeemScript,
+          });
+        });
+        break;
+
+      default:
+        break;
+    }
+  } catch (e) {
+    logger.error(e);
   }
 });
 
-redisSub.psubscribe('__keyspace@0__:SwapOrder:*');
+redisSub.on('subscribe', (channel, count) => {
+  logger.info(`[subcribe]channel: ${channel}, count: ${count}`);
+});
+
+redisSub.subscribe(orderState.channel);
 
 // Blockchain Height format used by swap service: '1254834'
 setInterval(() => {

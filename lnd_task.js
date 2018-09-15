@@ -14,11 +14,18 @@ redisSub.on('subscribe', (channel, count) => {
 redisSub.on('message', (channel, msg) => {
   logger.debug(`[message]${channel}: ${msg}`);
   if (channel !== orderState.channel) return;
+  let decodedMsg;
+
+  try {
+    decodedMsg = orderState.decodeMessage(msg);
+  } catch (e) {
+    logger.error(`decodeMessage: ${e}`);
+    return;
+  }
 
   const {
     state, invoice, onchainNetwork, lnDestPubKey, lnAmount,
-  } = orderState.decodeMessage(msg);
-
+  } = decodedMsg;
   if (state === orderState.Init) {
     getRoutes({ destination: lnDestPubKey, lnd, tokens: lnAmount }, (err, routes) => {
       if (err) {
