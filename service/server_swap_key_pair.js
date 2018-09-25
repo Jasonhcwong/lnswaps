@@ -59,6 +59,5 @@ module.exports = ({ index, network }) => {
     pk_hash: publicKeyHash.toString('hex'),
     private_key: keyPair.toWIF(),
     public_key: keyPair.getPublicKeyBuffer().toString('hex'),
-    swapKeyIndex: index,
   };
 };

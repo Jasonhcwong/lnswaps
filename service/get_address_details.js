@@ -10,7 +10,7 @@ const witnessScriptHashLength = 32;
     network: <Network Name String>
   }
 
-  @returns via cbk
+  @returns
   {
     [data]: <Witness Address Data Hex String>
     [hash]: <Address Hash Data Hex String>
@@ -19,13 +19,13 @@ const witnessScriptHashLength = 32;
     version: <Address Version Number>
   }
 */
-module.exports = ({ address, network }, cbk) => {
+module.exports = ({ address, network }) => {
   if (!address) {
-    return cbk([400, 'ExpectedAddress']);
+    throw new Error('ExpectedAddress');
   }
 
   if (!network || !bitcoinjslib.networks[network]) {
-    return cbk([400, 'ExpectedNetworkForAddress']);
+    throw new Error('ExpectedNetworkForAddress');
   }
 
   let base58Address;
@@ -47,7 +47,7 @@ module.exports = ({ address, network }, cbk) => {
 
   // Exit early: address does not parse as a bech32 or base58 address
   if (!details) {
-    return cbk([400, 'ExpectedValidAddress']);
+    throw new Error('ExpectedValidAddress');
   }
 
   const isWitness = details.prefix;
@@ -64,7 +64,7 @@ module.exports = ({ address, network }, cbk) => {
         break;
 
       default:
-        return cbk([400, 'UnexpectedWitnessDataLength']);
+        throw new Error('UnexpectedWitnessDataLength');
     }
   } else {
     switch (details.version) {
@@ -77,15 +77,15 @@ module.exports = ({ address, network }, cbk) => {
         break;
 
       default:
-        return cbk([400, 'UnknownAddressVersion']);
+        throw new Error('UnknownAddressVersion');
     }
   }
 
-  return cbk(null, {
+  return {
     type,
     data: !details.data ? null : details.data.toString('hex'),
     hash: !details.hash ? null : details.hash.toString('hex'),
     prefix: details.prefix,
     version: isWitness ? null : details.version,
-  });
+  };
 };

@@ -40,7 +40,7 @@ function encodeMessage({
   }
 
   if (state === orderState.WaitingForFundingConfirmation) {
-    if (!onchainNetwork || !fundingTxn) throw new Error(errorIncompleteParameters);
+    if (!fundingTxn) throw new Error(errorIncompleteParameters);
     return `${state}:${invoice}:${onchainNetwork}:${fundingTxn}`;
   }
 
@@ -100,7 +100,7 @@ function decodeMessage(msg) {
 
   if (state === orderState.WaitingForFunding) {
     const [onchainAmount, swapAddress, lnPaymentHash] = rest;
-    if (!onchainNetwork || !onchainAmount || !swapAddress || !lnPaymentHash) {
+    if (!onchainAmount || !swapAddress || !lnPaymentHash) {
       throw new Error(errorIncompleteParameters);
     }
     return {

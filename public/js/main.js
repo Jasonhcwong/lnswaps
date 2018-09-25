@@ -285,7 +285,6 @@ App.checkSwap = ({ button, id, quote }) => {
     network,
     invoice: App.swaps[id].invoice,
     redeem_script: App.swaps[id].redeem_script,
-    swap_key_index: App.swaps[id].swap_key_index,
   },
   (err, res) => {
     if (!!err && err.message === 'Gone') {
@@ -469,7 +468,6 @@ App.clickedShowSwap = function (event) {
     refund_public_key_hash: <Refund Public Key Hash Hex String>
     swap_amount: <Swap Amount Number>
     swap_fee: <Swap Fee Tokens Number>
-    swap_key_index: <Swap Key Index Number>
     swap_p2sh_p2wsh_address: <Swap Chain P2SH Nested SegWit Address String>
     swap_p2wsh_address: <Swap Chain P2WSH Bech32 Address String>
     timeout_block_height: <Swap Expiration Date Number>
@@ -532,10 +530,6 @@ App.createSwap = ({ invoice, network, refund }, cbk) => {
 
       if (!details.redeem_script) {
         throw new Error('ExpectedRedeemScript');
-      }
-
-      if (!details.swap_key_index) {
-        throw new Error('ExpectedSwapKeyIndex');
       }
 
       return details;
@@ -1017,7 +1011,6 @@ App.submitCreateSwapQuote = function (event) {
       refund_public_key_hash: details.refund_public_key_hash,
       swap_amount: details.swap_amount,
       swap_fee: details.swap_fee,
-      swap_key_index: details.swap_key_index,
       swap_p2sh_p2wsh_address: details.swap_p2sh_p2wsh_address,
       swap_p2wsh_address: details.swap_p2wsh_address,
       timeout_block_height: details.timeout_block_height,

@@ -31,7 +31,6 @@ const timeoutBlockCount = 1440;
     refund_public_key_hash: <Refund Public Key Hash Hex String>
     swap_amount: <Swap Amount Number>
     swap_fee: <Swap Fee Tokens Number>
-    swap_key_index: <Swap Key Index Number>
     swap_p2sh_p2wsh_address: <Swap Chain P2SH Nested SegWit Address String>
     swap_p2wsh_address: <Swap Chain P2WSH Bech32 Address String>
     timeout_block_height: <Swap Expiration Date Number>
@@ -55,9 +54,6 @@ module.exports = ({ invoice, network, refund }, cbk) => async.auto({
     return cbk();
   },
 
-  // get exchange rates and fees
-  getExchangeRatesAndFees: cbk => getExchangeRates(cbk),
-
   // Swap timeout block height
   timeoutBlockHeight: (cbk) => {
     redisClient.get(`Blockchain:${network}:Height`, (err, reply) => {
@@ -70,36 +66,18 @@ module.exports = ({ invoice, network, refund }, cbk) => async.auto({
   // Pull details about the invoice to pay
   getInvoice: cbk => getInvoiceDetails({ invoice, network }, cbk),
 
-  // Decode the refund address
-  getAddressDetails: (cbk) => {
-    if (network.startsWith('eth')) {
-      return cbk(null, { type: 'ethereum' });
-    }
-
-    return getAddressDetails({ network, address: refund }, cbk);
-  },
-
-  // Make a temporary server public key to send the swap to
-  serverDestinationKey: (cbk) => {
-    if (network.startsWith('eth')) {
-      return cbk(null, { type: 'ethereum' });
-    }
-
-    const swapKeyIndex = Math.round(Date.now() / msPerSec);
-    try {
-      return cbk(null, serverSwapKeyPair({ network, index: swapKeyIndex }));
-    } catch (e) {
-      return cbk([500, 'ExpectedValidSwapKeyPair', e]);
-    }
-  },
-
   // Determine the refund address hash
-  refundAddress: ['getAddressDetails', ({ getAddressDetails }, cbk) => {
+  refundAddress: [(cbk) => {
     if (network.startsWith('eth')) {
       return cbk(null, { type: 'ethereum' });
     }
 
-    const details = getAddressDetails;
+    let details;
+    try {
+      details = getAddressDetails({ network, address: refund });
+    } catch (e) {
+      return cbk([400, e.message]);
+    }
 
     if (details.type !== 'p2pkh' && details.type !== 'p2wpkh') {
       return cbk([400, 'ExpectedPayToPublicKeyHashAddress']);
@@ -112,7 +90,6 @@ module.exports = ({ invoice, network, refund }, cbk) => async.auto({
   swapAddress: [
     'getInvoice',
     'refundAddress',
-    'serverDestinationKey',
     'timeoutBlockHeight',
     'validate',
     (res, cbk) => {
@@ -120,11 +97,19 @@ module.exports = ({ invoice, network, refund }, cbk) => async.auto({
         return cbk(null, { p2sh_p2wsh_address: process.env.LNSWAP_CONTRACT_ADDRESS });
       }
 
+      let serverDestinationKey;
+      const swapKeyIndex = Math.round(Date.now() / msPerSec);
+      try {
+        serverDestinationKey = serverSwapKeyPair({ network, index: swapKeyIndex });
+      } catch (e) {
+        return cbk([500, 'ExpectedValidSwapKeyPair', e]);
+      }
+
       let addr;
       try {
         addr = swapAddress({
           network,
-          destination_public_key: res.serverDestinationKey.public_key,
+          destination_public_key: serverDestinationKey.public_key,
           payment_hash: res.getInvoice.id,
           refund_public_key_hash: res.refundAddress.public_key_hash,
           timeout_block_height: res.timeoutBlockHeight,
@@ -132,50 +117,15 @@ module.exports = ({ invoice, network, refund }, cbk) => async.auto({
       } catch (e) {
         return cbk([500, 'SwapAddressCreationFailure', e]);
       }
+      addr.swapKeyIndex = swapKeyIndex;
+      addr.destination_public_key = serverDestinationKey.public_key;
       return cbk(null, addr);
     }],
-
-  // Swap fee component
-  getSwapAmount: ['getInvoice', 'getExchangeRatesAndFees',
-    ({ getInvoice, getExchangeRatesAndFees }, cbk) => {
-      let rate;
-      let feePercentage;
-      switch (network) {
-        case 'testnet':
-        case 'bitcoin':
-          rate = 1.0;
-          feePercentage = parseFloat(getExchangeRatesAndFees.fees.BTC) / 10000;
-          break;
-
-        case 'ltctestnet':
-        case 'litecoin':
-          rate = parseFloat(getExchangeRatesAndFees.LTCBTC);
-          feePercentage = parseFloat(getExchangeRatesAndFees.fees.LTC) / 10000;
-          break;
-
-        case 'eth_rinkeby':
-        case 'ethereum':
-          rate = parseFloat(getExchangeRatesAndFees.ETHBTC);
-          feePercentage = parseFloat(getExchangeRatesAndFees.fees.ETH) / 10000;
-          break;
-
-        default:
-          return cbk([400, 'UnknownNetwork']);
-          break;
-      }
-
-      const convertedAmount = parseFloat(getInvoice.tokens) / 100000000 / rate;
-      const fee = convertedAmount * feePercentage;
-      return cbk(null, { tokens: (convertedAmount + fee).toFixed(8), fee: fee.toFixed(8) });
-    },
-  ],
 
   // Swap details
   swap: [
     'getInvoice',
-    'getSwapAmount',
     'refundAddress',
-    'serverDestinationKey',
     'swapAddress',
     'timeoutBlockHeight',
     (res, cbk) => {
@@ -191,24 +141,23 @@ module.exports = ({ invoice, network, refund }, cbk) => async.auto({
         invoice,
         onchainNetwork: network,
         onchainCurrency,
-        onchainAmount: res.getSwapAmount.tokens,
+        onchainAmount: res.getInvoice.onchainAmount,
         lnPaymentHash: res.getInvoice.id,
         orderCreationTime: new Date().toISOString(),
         swapAddress: res.swapAddress.p2sh_p2wsh_address,
-        swapKeyIndex: res.serverDestinationKey.swapKeyIndex || 'ethereum',
+        swapKeyIndex: res.swapAddress.swapKeyIndex || 'ethereum',
         refundAddress: refund || 'ethereum',
         redeemScript: res.swapAddress.redeem_script || 'ethereum',
         timeoutBlockNo: res.timeoutBlockHeight,
       }).then(() => cbk(null, {
         invoice,
-        destination_public_key: res.serverDestinationKey.public_key,
+        destination_public_key: res.swapAddress.destination_public_key,
         payment_hash: res.getInvoice.id,
         redeem_script: res.swapAddress.redeem_script,
         refund_address: refund,
         refund_public_key_hash: res.refundAddress.public_key_hash,
-        swap_amount: res.getSwapAmount.tokens,
-        swap_fee: res.getSwapAmount.fee,
-        swap_key_index: res.serverDestinationKey.swapKeyIndex,
+        swap_amount: res.getInvoice.onchainAmount,
+        swap_fee: res.getInvoice.fee,
         swap_p2sh_p2wsh_address: res.swapAddress.p2sh_p2wsh_address,
         swap_p2wsh_address: res.swapAddress.p2wsh_address,
         timeout_block_height: res.timeoutBlockHeight,
