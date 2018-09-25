@@ -1,11 +1,22 @@
-const { getRoutes, payInvoice } = require('ln-service');
+const { lightningDaemon, getRoutes, payInvoice } = require('ln-service');
 const log4js = require('log4js');
+
 const { redisClient, redisSub, updateRedisOrderAndPublish } = require('./service/redis_client.js');
-const { lnd } = require('./service/lnd.js');
 const orderState = require('./service/order_state.js');
 
 const logger = log4js.getLogger();
 logger.level = 'all';
+
+let lnd;
+try {
+  const { LNSWAP_LND_GRPC_HOST } = process.env;
+  lnd = lightningDaemon({
+    host: LNSWAP_LND_GRPC_HOST,
+  });
+} catch (e) {
+  logger.fatal('Error initialize connection with lnd:', e);
+  process.exit();
+}
 
 redisSub.on('subscribe', (channel, count) => {
   logger.info(`[subcribe]channel: ${channel}, count: ${count}`);
