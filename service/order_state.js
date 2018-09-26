@@ -20,9 +20,9 @@ const errorUnknownOrderState = 'Unknown order state.';
 const errorEmptyMessage = 'Empty Message.';
 
 function encodeMessage({
-  state, invoice, lnDestPubKey, lnPaymentHash, lnAmount, lnPreimage,
-  swapAddress, refundReason, onchainNetwork, onchainAmount,
-  fundingTxn, fundingBlockHash, claimingTxn, claimingBlockHash, refundTxn, refundBlockHash,
+  state, invoice, lnDestPubKey, lnPaymentHash, lnAmount, lnPreimage, swapAddress, refundReason,
+  onchainNetwork, onchainAmount, fundingTxn, fundingTxnIndex, fundingBlockHash, claimingTxn,
+  claimingBlockHash, refundTxn, refundBlockHash,
 }) {
   if (!invoice) throw new Error(errorInvoiceMissing);
   if (!onchainNetwork) throw new Error(errorIncompleteParameters);
@@ -40,8 +40,8 @@ function encodeMessage({
   }
 
   if (state === orderState.WaitingForFundingConfirmation) {
-    if (!fundingTxn) throw new Error(errorIncompleteParameters);
-    return `${state}:${invoice}:${onchainNetwork}:${fundingTxn}`;
+    if (!fundingTxn || !fundingTxnIndex) throw new Error(errorIncompleteParameters);
+    return `${state}:${invoice}:${onchainNetwork}:${fundingTxn}:${fundingTxnIndex}`;
   }
 
   if (state === orderState.OrderFunded) {
@@ -109,10 +109,11 @@ function decodeMessage(msg) {
   }
 
   if (state === orderState.WaitingForFundingConfirmation) {
-    const [fundingTxn] = rest;
+    const [fundingTxn, fundingTxnIndex] = rest;
     if (!fundingTxn) throw new Error(errorIncompleteParameters);
+    if (!fundingTxnIndex) throw new Error(errorIncompleteParameters);
     return {
-      state, invoice, onchainNetwork, fundingTxn,
+      state, invoice, onchainNetwork, fundingTxn, fundingTxnIndex,
     };
   }
 

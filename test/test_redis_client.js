@@ -13,6 +13,7 @@ const onchainNetwork = 'eth_rinkeby';
 const onchainAmount = '2130000';
 const swapAddress = '0x3427f002e69500189b4c6c11dca68b9447f98ad3';
 const fundingTxn = '0x54f3087140aeb894512cb698312237c05d8c7290e9abe9762b2705841ae4f416';
+const fundingTxnIndex = '0';
 const fundingBlockHash = '0x1d495aa6c99311111fd89cbc6c52c40b50ca1e88c879e2999399c4e2054ef5af';
 const claimingTxn = '0x54f308714024b894512cb698312237c05d8c7290e9abe9762b2705841ae4f416';
 const claimingBlockHash = '0x1d495a56c89311111fd89cbc6c52c40b50ca1e88c879e2999399c4e2054ef5af';
@@ -101,6 +102,7 @@ describe('Redis', () => {
       assert.strictEqual(ret.invoice, invoice);
       assert.strictEqual(ret.onchainNetwork, onchainNetwork);
       assert.strictEqual(ret.fundingTxn, fundingTxn);
+      assert.strictEqual(ret.fundingTxnIndex, fundingTxnIndex);
 
       done();
     });
@@ -110,6 +112,7 @@ describe('Redis', () => {
       invoice,
       onchainNetwork,
       fundingTxn,
+      fundingTxnIndex,
     }).catch(() => assert.fail('failed.'));
   });
 

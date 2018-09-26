@@ -9,13 +9,12 @@ const FEE_ESTIMATION_EXPIRATION = 60; // seconds
 
 const retryLimit = 10;
 const interestedInvoices = new Map(); // invoice => ({onchainAmount, lnPaymentHash})
-const interestedTxns = new Map(); // txid => (invoice)
 
 const logger = log4js.getLogger();
 logger.level = 'all';
 
-// const RINKEBY_WSS = 'wss://rinkeby.infura.io/ws';
-const GETH_WSS = 'ws://127.0.0.1:8546';
+const RINKEBY_WSS = 'wss://rinkeby.infura.io/ws';
+// const GETH_WSS = 'ws://127.0.0.1:8546';
 
 const web3 = new Web3();
 
@@ -88,7 +87,6 @@ redisSub.on('message', (channel, msg) => {
         break;
 
       case orderState.WaitingForFundingConfirmation:
-        interestedTxns.set(fundingTxn, invoice);
         logger.info('added interestedTxn: ', fundingTxn);
         break;
 
@@ -145,9 +143,8 @@ function updatePendingTxn({ txn }) {
       invoice: decodedParams.lninvoice,
       onchainNetwork: LNSWAP_CHAIN,
       fundingTxn: txn.hash,
+      fundingTxnIndex: '0',
     }).catch(e => logger.error(`Error updateRedisOrderAndPublish: ${e}`));
-
-    interestedTxns.set(txn.hash, decodedParams.lninvoice);
 
     logger.info(`Found interested txn: ${txn.hash}`);
   }
@@ -293,8 +290,8 @@ function setWeb3ProviderEvents(_provider) {
 }
 
 function startWeb3() {
-  // const provider = new Web3.providers.WebsocketProvider(RINKEBY_WSS);
-  const provider = new Web3.providers.WebsocketProvider(GETH_WSS, { headers: { Origin: 'http://localhost' } });
+  const provider = new Web3.providers.WebsocketProvider(RINKEBY_WSS);
+  // const provider = new Web3.providers.WebsocketProvider(GETH_WSS, { headers: { Origin: 'http://localhost' } });
 
   web3.setProvider(provider);
   setWeb3ProviderEvents(provider);
