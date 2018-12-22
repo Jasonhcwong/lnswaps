@@ -1,4 +1,4 @@
-const { lightningDaemon, getRoutes, payInvoice } = require('ln-service');
+const { lightningDaemon, getRoutes, pay } = require('ln-service');
 const log4js = require('log4js');
 
 const { redisClient, redisSub, updateRedisOrderAndPublish } = require('./service/redis_client.js');
@@ -9,9 +9,11 @@ logger.level = 'all';
 
 let lnd;
 try {
-  const { LNSWAP_LND_GRPC_HOST } = process.env;
+  const { LNSWAP_LND_SOCKET, LNSWAP_LND_CERT, LNSWAP_LND_MACAROON } = process.env;
   lnd = lightningDaemon({
-    host: LNSWAP_LND_GRPC_HOST,
+    socket: LNSWAP_LND_SOCKET,
+    cert: LNSWAP_LND_CERT,
+    macaroon: LNSWAP_LND_MACAROON,
   });
 } catch (e) {
   logger.fatal('Error initialize connection with lnd:', e);
@@ -49,10 +51,10 @@ redisSub.on('message', (channel, msg) => {
     });
   } else if (state === orderState.OrderFunded) {
     // TODO: set lnPaymentLock and state before pay
-    payInvoice({ lnd, invoice }, (err, payResult) => {
+    pay({ lnd, request: invoice }, (err, payResult) => {
       const refundReason = 'Lightning payment failed.';
       const newState = err ? orderState.WaitingForRefund : orderState.WaitingForClaiming;
-      const lnPreimage = payResult ? payResult.payment_secret : '';
+      const lnPreimage = payResult ? payResult.secret : '';
 
       if (err) logger.error(`payInvoice ${invoice} failed: ${err}`);
       updateRedisOrderAndPublish(`${orderState.prefix}:${invoice}`, {

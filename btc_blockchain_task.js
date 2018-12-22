@@ -1,4 +1,4 @@
-const zmq = require('zmq');
+const zmq = require('zeromq');
 const bitcoinRpc = require('node-bitcoin-rpc');
 const { mnemonicToSeed, validateMnemonic } = require('bip39');
 const bip65Encode = require('bip65').encode;

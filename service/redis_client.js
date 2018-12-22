@@ -7,7 +7,8 @@ const orderState = require('./order_state');
 const logger = log4js.getLogger();
 logger.level = 'all';
 
-const { LNSWAP_REDIS_URL } = process.env; if (!LNSWAP_REDIS_URL) {
+const { LNSWAP_REDIS_URL } = process.env;
+if (!LNSWAP_REDIS_URL) {
   logger.fatal('Please set environment variable LNSWAP_REDIS_URL.');
   process.exit();
 }

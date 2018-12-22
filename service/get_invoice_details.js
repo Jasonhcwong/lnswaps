@@ -1,5 +1,5 @@
 const async = require('async');
-const { parseInvoice } = require('ln-service');
+const { parsePaymentRequest } = require('ln-service');
 
 const getExchangeRates = require('./get_exchange_rates');
 const { redisClient, updateRedisOrderAndPublish, ReplyError } = require('./redis_client');
@@ -69,7 +69,7 @@ module.exports = ({ invoice, network }, cbk) => {
 
       let parsed;
       try {
-        parsed = parseInvoice({ invoice });
+        parsed = parsePaymentRequest({ request: invoice });
       } catch (e) {
         return cbk([400, 'DecodeInvoiceFailure']);
       }
@@ -97,7 +97,7 @@ module.exports = ({ invoice, network }, cbk) => {
         invoice,
         onchainNetwork: network,
         lnCreationDate: parsed.created_at,
-        lnDescription: parsed.description,
+        lnDescription: parsed.description || '',
         lnDestPubKey: parsed.destination,
         lnExpiryDate: parsed.expires_at,
         lnPaymentHash: parsed.id,
@@ -187,7 +187,7 @@ module.exports = ({ invoice, network }, cbk) => {
       * parseFloat(result.getExchangeRates.BTCUSD);
     const ret = {
       created_at: result.parsedInvoice.created_at,
-      description: result.parsedInvoice.description,
+      description: result.parsedInvoice.description || '',
       destination_public_key: result.parsedInvoice.destination,
       expires_at: result.parsedInvoice.expires_at,
       id: result.parsedInvoice.id,
